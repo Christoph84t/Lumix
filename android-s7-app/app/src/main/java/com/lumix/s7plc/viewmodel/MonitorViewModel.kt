@@ -1,13 +1,13 @@
 package com.lumix.s7plc.viewmodel
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import com.lumix.s7plc.model.PlcRepository
 import com.lumix.s7plc.model.PlcTag
 import com.lumix.s7plc.model.TagValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -18,96 +18,82 @@ data class TagState(
     val isLoading: Boolean = false
 )
 
-class MonitorViewModel(private val repository: PlcRepository) : ViewModel() {
+class MonitorViewModel(private val repository: PlcRepository) {
 
-    private val _tags = MutableLiveData<List<TagState>>(emptyList())
-    val tags: LiveData<List<TagState>> = _tags
+    // Use IO dispatcher directly – avoids Kotlin 1.3 bug with ByteArray/Int in nested withContext
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val _statusMessage = MutableLiveData<String>()
-    val statusMessage: LiveData<String> = _statusMessage
+    val tags = ObservableValue<List<TagState>>(emptyList())
+    val statusMessage = ObservableValue<String>("")
 
     var pollingIntervalMs: Long = 1000L
     private var pollingJob: Job? = null
 
-    // -------------------------------------------------------------------------
-    // Tag-Verwaltung
-    // -------------------------------------------------------------------------
-
     fun addTag(tag: PlcTag) {
-        val current = _tags.value.orEmpty().toMutableList()
+        val current = tags.value.toMutableList()
         if (current.none { it.tag.id == tag.id }) {
             current.add(TagState(tag))
-            _tags.value = current
+            tags.postValue(current)
         }
     }
 
     fun removeTag(tagId: String) {
-        _tags.value = _tags.value.orEmpty().filter { it.tag.id != tagId }
+        tags.postValue(tags.value.filter { it.tag.id != tagId })
     }
 
     fun clearTags() {
-        _tags.value = emptyList()
+        tags.postValue(emptyList())
     }
-
-    // -------------------------------------------------------------------------
-    // Polling
-    // -------------------------------------------------------------------------
 
     fun startPolling() {
         if (pollingJob?.isActive == true) return
-        pollingJob = viewModelScope.launch {
+        pollingJob = scope.launch {
             while (isActive) {
                 readAllTags()
                 delay(pollingIntervalMs)
             }
         }
-        _statusMessage.value = "Monitoring gestartet (Intervall: ${pollingIntervalMs}ms)"
+        statusMessage.postValue("Monitoring gestartet (Intervall: ${pollingIntervalMs}ms)")
     }
 
     fun stopPolling() {
         pollingJob?.cancel()
         pollingJob = null
-        _statusMessage.value = "Monitoring gestoppt"
+        statusMessage.postValue("Monitoring gestoppt")
     }
 
     fun readOnce() {
-        viewModelScope.launch { readAllTags() }
+        scope.launch { readAllTags() }
     }
 
     private suspend fun readAllTags() {
-        val current = _tags.value.orEmpty()
+        val current = tags.value
         if (current.isEmpty()) return
-
         val updated = current.map { state ->
-            val result = repository.readTag(state.tag)
-            state.copy(
-                value = result.getOrElse { TagValue.ErrorValue(it.message ?: "Lesefehler") },
-                isLoading = false
-            )
+            val value = try {
+                repository.readTag(state.tag)
+            } catch (e: Exception) {
+                TagValue.ErrorValue(e.message ?: "Lesefehler")
+            }
+            state.copy(value = value, isLoading = false)
         }
-        _tags.postValue(updated)
+        tags.postValue(updated)
     }
-
-    // -------------------------------------------------------------------------
-    // Schreiben
-    // -------------------------------------------------------------------------
 
     fun writeTagValue(tag: PlcTag, rawBytes: ByteArray) {
-        viewModelScope.launch {
-            repository.writeTag(tag, rawBytes).fold(
-                onSuccess = {
-                    _statusMessage.postValue("${tag.name} geschrieben")
-                    readOnce()
-                },
-                onFailure = { e ->
-                    _statusMessage.postValue("Schreibfehler: ${e.message}")
-                }
-            )
+        scope.launch {
+            try {
+                repository.writeTag(tag, rawBytes)
+                statusMessage.postValue("${tag.name} geschrieben")
+                readAllTags()
+            } catch (e: Exception) {
+                statusMessage.postValue("Schreibfehler: ${e.message}")
+            }
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    fun onDestroy() {
         stopPolling()
+        scope.cancel()
     }
 }

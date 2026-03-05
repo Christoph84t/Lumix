@@ -12,7 +12,7 @@ enum class S7Area(val code: Byte, val label: String, val shortName: String) {
     TIMER(0x1D.toByte(),    "Timer",         "T");
 
     companion object {
-        fun fromCode(code: Byte) = entries.firstOrNull { it.code == code }
+        fun fromCode(code: Byte) = values().firstOrNull { it.code == code }
     }
 }
 
@@ -30,6 +30,6 @@ enum class S7WordLen(val code: Byte, val label: String, val sizeInBytes: Int) {
     REAL(0x08,  "Real",  4);
 
     companion object {
-        fun fromCode(code: Byte) = entries.firstOrNull { it.code == code }
+        fun fromCode(code: Byte) = values().firstOrNull { it.code == code }
     }
 }

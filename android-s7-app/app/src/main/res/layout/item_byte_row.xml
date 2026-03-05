@@ -5,7 +5,7 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:padding="8dp"
-    android:background="?attr/selectableItemBackground">
+    android:background="@android:drawable/list_selector_background">
 
     <TextView
         android:id="@+id/tvAddress"
@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="2"
         android:textSize="12sp"
-        android:fontFamily="monospace" />
+        android:typeface="monospace" />
 
     <TextView
         android:id="@+id/tvHex"
@@ -21,7 +21,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:textSize="12sp"
-        android:fontFamily="monospace"
+        android:typeface="monospace"
         android:textColor="#1565C0" />
 
     <TextView
@@ -30,7 +30,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:textSize="12sp"
-        android:fontFamily="monospace" />
+        android:typeface="monospace" />
 
     <TextView
         android:id="@+id/tvBinary"
@@ -38,7 +38,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="2"
         android:textSize="10sp"
-        android:fontFamily="monospace"
+        android:typeface="monospace"
         android:textColor="#2E7D32" />
 
 </LinearLayout>

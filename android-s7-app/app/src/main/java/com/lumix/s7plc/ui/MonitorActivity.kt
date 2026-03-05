@@ -1,93 +1,113 @@
 package com.lumix.s7plc.ui
 
+import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-import androidx.activity.viewModels
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.ViewModelProvider
-import androidx.recyclerview.widget.LinearLayoutManager
-import com.google.android.material.snackbar.Snackbar
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.ListView
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
 import com.lumix.s7plc.R
-import com.lumix.s7plc.databinding.ActivityMonitorBinding
-import com.lumix.s7plc.databinding.DialogAddTagBinding
+import com.lumix.s7plc.S7PlcApp
 import com.lumix.s7plc.model.PlcDataType
 import com.lumix.s7plc.model.PlcTag
 import com.lumix.s7plc.protocol.S7Area
 import com.lumix.s7plc.ui.adapter.TagAdapter
 import com.lumix.s7plc.viewmodel.ConnectionViewModel
-import com.lumix.s7plc.viewmodel.ConnectionViewModelFactory
 import com.lumix.s7plc.viewmodel.MonitorViewModel
-import com.lumix.s7plc.viewmodel.MonitorViewModelFactory
+import com.lumix.s7plc.viewmodel.TagState
 import java.util.UUID
 
-class MonitorActivity : AppCompatActivity() {
+@Suppress("DEPRECATION")
+class MonitorActivity : Activity() {
 
-    private lateinit var binding: ActivityMonitorBinding
-    private val connectionVm: ConnectionViewModel by viewModels { ConnectionViewModelFactory() }
+    private lateinit var connectionVm: ConnectionViewModel
     private lateinit var monitorVm: MonitorViewModel
     private lateinit var adapter: TagAdapter
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityMonitorBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
+    private lateinit var switchPolling: Switch
+    private lateinit var btnReadOnce: Button
+    private lateinit var btnAddTag: Button
+    private lateinit var seekBarInterval: SeekBar
+    private lateinit var tvInterval: TextView
+    private lateinit var lvTags: ListView
+    private lateinit var tvEmpty: TextView
 
-        monitorVm = ViewModelProvider(
-            this, MonitorViewModelFactory(connectionVm)
-        )[MonitorViewModel::class.java]
-
-        setupRecyclerView()
-        setupFab()
-        setupPollingControls()
-        observeViewModel()
-
-        // Demo-Tags hinzufügen (können entfernt werden)
-        addDemoTags()
+    private val tagsObserver: (List<TagState>) -> Unit = { states ->
+        adapter.setData(states)
+        tvEmpty.visibility = if (states.isEmpty()) View.VISIBLE else View.GONE
+    }
+    private val statusObserver: (String) -> Unit = { msg ->
+        if (msg.isNotEmpty()) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
-    private fun setupRecyclerView() {
-        adapter = TagAdapter(
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_monitor)
+
+        actionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            title = getString(R.string.title_monitor)
+        }
+
+        connectionVm = (application as S7PlcApp).connectionViewModel
+        monitorVm = MonitorViewModel(connectionVm.repository)
+
+        switchPolling   = findViewById(R.id.switchPolling) as Switch
+        btnReadOnce     = findViewById(R.id.btnReadOnce) as Button
+        btnAddTag       = findViewById(R.id.btnAddTag) as Button
+        seekBarInterval = findViewById(R.id.seekBarInterval) as SeekBar
+        tvInterval      = findViewById(R.id.tvInterval) as TextView
+        lvTags          = findViewById(R.id.lvTags) as ListView
+        tvEmpty         = findViewById(R.id.tvEmpty) as TextView
+
+        adapter = TagAdapter(this,
             onRemove = { tag -> monitorVm.removeTag(tag.id) },
             onWrite  = { tag -> showWriteDialog(tag) }
         )
-        binding.rvTags.layoutManager = LinearLayoutManager(this)
-        binding.rvTags.adapter = adapter
+        lvTags.adapter = adapter
+
+        setupControls()
+        addDemoTags()
+
+        monitorVm.tags.observe(tagsObserver)
+        monitorVm.statusMessage.observe(statusObserver)
     }
 
-    private fun setupFab() {
-        binding.fabAddTag.setOnClickListener { showAddTagDialog() }
+    override fun onDestroy() {
+        super.onDestroy()
+        monitorVm.tags.removeObserver(tagsObserver)
+        monitorVm.statusMessage.removeObserver(statusObserver)
+        monitorVm.onDestroy()
     }
 
-    private fun setupPollingControls() {
-        binding.togglePolling.setOnCheckedChangeListener { _, checked ->
+    private fun setupControls() {
+        switchPolling.setOnCheckedChangeListener { _, checked ->
             if (checked) monitorVm.startPolling() else monitorVm.stopPolling()
         }
-        binding.btnReadOnce.setOnClickListener { monitorVm.readOnce() }
+        btnReadOnce.setOnClickListener { monitorVm.readOnce() }
+        btnAddTag.setOnClickListener { showAddTagDialog() }
 
-        binding.sliderInterval.addOnChangeListener { _, value, _ ->
-            monitorVm.pollingIntervalMs = value.toLong()
-            binding.tvInterval.text = "${value.toInt()} ms"
-        }
-        binding.sliderInterval.value = 1000f
-    }
-
-    private fun observeViewModel() {
-        monitorVm.tags.observe(this) { states ->
-            adapter.submitList(states)
-            binding.tvEmpty.visibility = if (states.isEmpty()) View.VISIBLE else View.GONE
-        }
-        monitorVm.statusMessage.observe(this) { msg ->
-            Snackbar.make(binding.root, msg, Snackbar.LENGTH_SHORT).show()
-        }
+        seekBarInterval.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                val ms = 200L + progress * 100L
+                monitorVm.pollingIntervalMs = ms
+                tvInterval.text = "$ms ms"
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {}
+        })
+        seekBarInterval.progress = 8 // default ~1000ms
     }
 
     private fun addDemoTags() {
-        // Beispiel-Tags – zeigen, wie die App genutzt wird
         monitorVm.addTag(PlcTag(
             id = UUID.randomUUID().toString(),
             name = "DB1.DBW0 (Word)",
@@ -113,38 +133,42 @@ class MonitorActivity : AppCompatActivity() {
     }
 
     private fun showAddTagDialog() {
-        val dialogBinding = DialogAddTagBinding.inflate(layoutInflater)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_add_tag, null)
 
-        // Bereich-Spinner befüllen
-        val areas = S7Area.entries.map { it.label }
-        dialogBinding.spinnerArea.adapter = android.widget.ArrayAdapter(
-            this, android.R.layout.simple_spinner_item, areas
-        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        val etTagName     = dialogView.findViewById(R.id.etTagName) as android.widget.EditText
+        val spinnerArea   = dialogView.findViewById(R.id.spinnerArea) as Spinner
+        val etDbNumber    = dialogView.findViewById(R.id.etDbNumber) as android.widget.EditText
+        val etByteOffset  = dialogView.findViewById(R.id.etByteOffset) as android.widget.EditText
+        val etBitOffset   = dialogView.findViewById(R.id.etBitOffset) as android.widget.EditText
+        val spinnerType   = dialogView.findViewById(R.id.spinnerDataType) as Spinner
+        val etUnit        = dialogView.findViewById(R.id.etUnit) as android.widget.EditText
+        val etDescription = dialogView.findViewById(R.id.etDescription) as android.widget.EditText
 
-        // Datentyp-Spinner
-        val types = PlcDataType.entries.map { it.label }
-        dialogBinding.spinnerDataType.adapter = android.widget.ArrayAdapter(
-            this, android.R.layout.simple_spinner_item, types
-        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        spinnerArea.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item,
+            S7Area.values().map { it.label })
+            .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+
+        spinnerType.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item,
+            PlcDataType.values().map { it.label })
+            .also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
 
         AlertDialog.Builder(this)
             .setTitle("Tag hinzufügen")
-            .setView(dialogBinding.root)
+            .setView(dialogView)
             .setPositiveButton("Hinzufügen") { _, _ ->
-                val selectedArea = S7Area.entries[dialogBinding.spinnerArea.selectedItemPosition]
-                val selectedType = PlcDataType.entries[dialogBinding.spinnerDataType.selectedItemPosition]
-                val tag = PlcTag(
+                val selectedArea = S7Area.values()[spinnerArea.selectedItemPosition]
+                val selectedType = PlcDataType.values()[spinnerType.selectedItemPosition]
+                monitorVm.addTag(PlcTag(
                     id          = UUID.randomUUID().toString(),
-                    name        = dialogBinding.etTagName.text.toString().ifBlank { "Tag" },
+                    name        = etTagName.text.toString().ifBlank { "Tag" },
                     area        = selectedArea,
-                    dbNumber    = dialogBinding.etDbNumber.text.toString().toIntOrNull() ?: 0,
-                    byteOffset  = dialogBinding.etByteOffset.text.toString().toIntOrNull() ?: 0,
-                    bitOffset   = dialogBinding.etBitOffset.text.toString().toIntOrNull() ?: 0,
+                    dbNumber    = etDbNumber.text.toString().toIntOrNull() ?: 0,
+                    byteOffset  = etByteOffset.text.toString().toIntOrNull() ?: 0,
+                    bitOffset   = etBitOffset.text.toString().toIntOrNull() ?: 0,
                     dataType    = selectedType,
-                    unit        = dialogBinding.etUnit.text.toString(),
-                    description = dialogBinding.etDescription.text.toString()
-                )
-                monitorVm.addTag(tag)
+                    unit        = etUnit.text.toString(),
+                    description = etDescription.text.toString()
+                ))
             }
             .setNegativeButton("Abbrechen", null)
             .show()
@@ -163,7 +187,7 @@ class MonitorActivity : AppCompatActivity() {
                 if (bytes != null) {
                     monitorVm.writeTagValue(tag, bytes)
                 } else {
-                    Snackbar.make(binding.root, "Ungültiger Wert", Snackbar.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Ungültiger Wert", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Abbrechen", null)
@@ -172,7 +196,7 @@ class MonitorActivity : AppCompatActivity() {
 
     private fun valueToBytes(tag: PlcTag, text: String): ByteArray? = try {
         when (tag.dataType) {
-            PlcDataType.BOOL  -> byteArrayOf(if (text.trim().lowercase() in listOf("1","true","ein","on")) 1 else 0)
+            PlcDataType.BOOL  -> byteArrayOf(if (text.trim().toLowerCase() in listOf("1","true","ein","on")) 1 else 0)
             PlcDataType.BYTE  -> byteArrayOf(text.trim().toInt(16).toByte())
             PlcDataType.WORD,
             PlcDataType.INT   -> {
@@ -199,16 +223,13 @@ class MonitorActivity : AppCompatActivity() {
     } catch (_: Exception) { null }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.menu_monitor, menu)
+        menu.add(0, 1, 0, "Tags löschen")
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
-        R.id.action_clear_tags -> { monitorVm.clearTags(); true }
+        android.R.id.home -> { finish(); true }
+        1 -> { monitorVm.clearTags(); true }
         else -> super.onOptionsItemSelected(item)
-    }
-
-    override fun onSupportNavigateUp(): Boolean {
-        finish(); return true
     }
 }

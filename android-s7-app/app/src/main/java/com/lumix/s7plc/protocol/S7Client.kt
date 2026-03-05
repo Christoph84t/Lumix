@@ -373,9 +373,9 @@ class S7Client {
         val ins = inputStream
             ?: throw S7Exception("Nicht verbunden", S7Exception.ERR_NOT_CONNECTED)
 
-        // TPKT-Header lesen (4 Bytes)
+        // TPKT-Header lesen (4 Bytes) – readFully statt readNBytes (API 23-kompatibel)
         val header = ByteArray(HEADER_SIZE)
-        val hRead = ins.readNBytes(header, 0, HEADER_SIZE)
+        val hRead = readFully(ins, header, 0, HEADER_SIZE)
         if (hRead < HEADER_SIZE) {
             throw S7Exception("TPKT-Header unvollständig ($hRead Bytes)", S7Exception.ERR_INVALID_RESPONSE)
         }
@@ -386,11 +386,9 @@ class S7Client {
         }
 
         val payload = ByteArray(totalLen - HEADER_SIZE)
-        var read = 0
-        while (read < payload.size) {
-            val n = ins.read(payload, read, payload.size - read)
-            if (n < 0) throw S7Exception("Verbindung unerwartet getrennt", S7Exception.ERR_CONNECTION_FAILED)
-            read += n
+        val pRead = readFully(ins, payload, 0, payload.size)
+        if (pRead < payload.size) {
+            throw S7Exception("Verbindung unerwartet getrennt", S7Exception.ERR_CONNECTION_FAILED)
         }
 
         Log.v(TAG, "Empfangen: $totalLen Bytes gesamt")
@@ -400,6 +398,17 @@ class S7Client {
     // -------------------------------------------------------------------------
     // Hilfsmethoden
     // -------------------------------------------------------------------------
+
+    /** Liest genau [len] Bytes – API-23-kompatibel, ersetzt InputStream.readNBytes() */
+    private fun readFully(ins: InputStream, buf: ByteArray, off: Int, len: Int): Int {
+        var read = 0
+        while (read < len) {
+            val n = ins.read(buf, off + read, len - read)
+            if (n < 0) return read
+            read += n
+        }
+        return read
+    }
 
     private fun checkConnected() {
         if (!isConnected || socket?.isConnected != true) {

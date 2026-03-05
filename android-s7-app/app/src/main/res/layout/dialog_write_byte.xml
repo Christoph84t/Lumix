@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -15,17 +14,12 @@
         android:textSize="13sp"
         android:textColor="@android:color/darker_gray" />
 
-    <com.google.android.material.textfield.TextInputLayout
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Neuer Wert (Hex oder Dezimal):" android:layout_marginBottom="4dp"/>
+    <EditText
+        android:id="@+id/etNewValue"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Neuer Wert (Hex oder Dezimal)"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-        <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etNewValue"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="text"
-            android:fontFamily="monospace" />
-    </com.google.android.material.textfield.TextInputLayout>
+        android:inputType="text"
+        android:typeface="monospace" />
 
 </LinearLayout>

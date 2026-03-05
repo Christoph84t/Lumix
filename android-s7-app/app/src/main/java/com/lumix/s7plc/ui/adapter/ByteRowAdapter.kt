@@ -1,37 +1,39 @@
 package com.lumix.s7plc.ui.adapter
 
+import android.content.Context
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
-import androidx.recyclerview.widget.DiffUtil
-import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
-import com.lumix.s7plc.databinding.ItemByteRowBinding
+import android.widget.BaseAdapter
+import android.widget.TextView
+import com.lumix.s7plc.R
 import com.lumix.s7plc.model.ByteRow
 
 class ByteRowAdapter(
+    private val context: Context,
     private val onRowClick: (ByteRow) -> Unit
-) : ListAdapter<ByteRow, ByteRowAdapter.ViewHolder>(DIFF) {
+) : BaseAdapter() {
 
-    inner class ViewHolder(private val b: ItemByteRowBinding) : RecyclerView.ViewHolder(b.root) {
-        fun bind(row: ByteRow) {
-            b.tvAddress.text  = "DBB%d".format(row.address)
-            b.tvHex.text      = "0x${row.hex}"
-            b.tvDecimal.text  = row.decimal
-            b.tvBinary.text   = row.binary
-            b.root.setOnClickListener { onRowClick(row) }
-        }
+    private var items: List<ByteRow> = emptyList()
+
+    fun setData(data: List<ByteRow>) {
+        items = data
+        notifyDataSetChanged()
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
-        ViewHolder(ItemByteRowBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+    override fun getCount() = items.size
+    override fun getItem(position: Int) = items[position]
+    override fun getItemId(position: Int) = position.toLong()
 
-    override fun onBindViewHolder(holder: ViewHolder, position: Int) =
-        holder.bind(getItem(position))
-
-    companion object {
-        val DIFF = object : DiffUtil.ItemCallback<ByteRow>() {
-            override fun areItemsTheSame(a: ByteRow, b: ByteRow) = a.address == b.address
-            override fun areContentsTheSame(a: ByteRow, b: ByteRow) = a == b
-        }
+    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val view = convertView
+            ?: LayoutInflater.from(context).inflate(R.layout.item_byte_row, parent, false)
+        val row = items[position]
+        (view.findViewById(R.id.tvAddress) as TextView).text = "DBB%d".format(row.address)
+        (view.findViewById(R.id.tvHex) as TextView).text     = "0x${row.hex}"
+        (view.findViewById(R.id.tvDecimal) as TextView).text = row.decimal
+        (view.findViewById(R.id.tvBinary) as TextView).text  = row.binary
+        view.setOnClickListener { onRowClick(row) }
+        return view
     }
 }

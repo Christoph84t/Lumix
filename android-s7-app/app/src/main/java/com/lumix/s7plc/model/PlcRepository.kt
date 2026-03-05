@@ -1,11 +1,7 @@
 package com.lumix.s7plc.model
 
-import android.util.Log
 import com.lumix.s7plc.protocol.S7Area
 import com.lumix.s7plc.protocol.S7Client
-import com.lumix.s7plc.protocol.S7Exception
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 class PlcRepository {
 
@@ -13,76 +9,57 @@ class PlcRepository {
     val isConnected get() = client.isConnected
     val negotiatedPduSize get() = client.negotiatedPduSize
 
-    companion object {
-        private const val TAG = "PlcRepository"
-    }
-
     // -------------------------------------------------------------------------
-    // Verbindung
+    // Verbindung  (blockierend – Aufruf muss im IO-Dispatcher erfolgen)
     // -------------------------------------------------------------------------
 
-    suspend fun connect(connection: PlcConnection): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            client.connect(connection.host, connection.rack, connection.slot)
-        }
+    fun connect(connection: PlcConnection) {
+        client.connect(connection.host, connection.rack, connection.slot)
     }
 
-    suspend fun disconnect() = withContext(Dispatchers.IO) {
+    fun disconnect() {
         client.disconnect()
     }
 
     // -------------------------------------------------------------------------
-    // Rohe Byte-Lese-/Schreiboperationen (für DB-Browser)
+    // Rohe Byte-Lese-/Schreiboperationen (werfen Exception bei Fehler)
     // -------------------------------------------------------------------------
 
-    suspend fun readDB(dbNumber: Int, startByte: Int, sizeBytes: Int): Result<ByteArray> =
-        withContext(Dispatchers.IO) {
-            runCatching { client.readDB(dbNumber, startByte, sizeBytes) }
-        }
+    fun readDB(dbNumber: Int, startByte: Int, sizeBytes: Int): ByteArray =
+        client.readDB(dbNumber, startByte, sizeBytes)
 
-    suspend fun writeDB(dbNumber: Int, startByte: Int, data: ByteArray): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching { client.writeDB(dbNumber, startByte, data) }
-        }
+    fun writeDB(dbNumber: Int, startByte: Int, data: ByteArray) =
+        client.writeDB(dbNumber, startByte, data)
 
-    suspend fun readArea(
-        area: S7Area,
-        dbNumber: Int,
-        startByte: Int,
-        sizeBytes: Int
-    ): Result<ByteArray> = withContext(Dispatchers.IO) {
-        runCatching { client.readArea(area, dbNumber, startByte, sizeBytes) }
-    }
+    fun readArea(area: S7Area, dbNumber: Int, startByte: Int, sizeBytes: Int): ByteArray =
+        client.readArea(area, dbNumber, startByte, sizeBytes)
 
     // -------------------------------------------------------------------------
     // Typisiertes Tag-Lesen
     // -------------------------------------------------------------------------
 
-    suspend fun readTag(tag: PlcTag): Result<TagValue> = withContext(Dispatchers.IO) {
-        runCatching {
-            val buf = client.readArea(tag.area, tag.dbNumber, tag.byteOffset, tag.dataType.sizeBytes)
-            when (tag.dataType) {
-                PlcDataType.BOOL  -> TagValue.BoolValue(client.getBoolean(buf, 0, tag.bitOffset))
-                PlcDataType.BYTE  -> TagValue.IntValue(buf[0].toLong() and 0xFF, tag.unit)
-                PlcDataType.WORD  -> TagValue.IntValue(client.getWord(buf, 0).toLong(), tag.unit)
-                PlcDataType.INT   -> TagValue.IntValue(client.getInt(buf, 0).toLong(), tag.unit)
-                PlcDataType.DWORD -> TagValue.IntValue(client.getDWord(buf, 0), tag.unit)
-                PlcDataType.DINT  -> TagValue.IntValue(
-                    ByteArray(4).also { buf.copyInto(it) }.let {
-                        ((it[0].toLong() and 0xFF) shl 24) or
-                        ((it[1].toLong() and 0xFF) shl 16) or
-                        ((it[2].toLong() and 0xFF) shl 8)  or
-                         (it[3].toLong() and 0xFF)
-                    }, tag.unit)
-                PlcDataType.REAL  -> TagValue.RealValue(client.getReal(buf, 0), tag.unit)
+    fun readTag(tag: PlcTag): TagValue {
+        val buf = client.readArea(tag.area, tag.dbNumber, tag.byteOffset, tag.dataType.sizeBytes)
+        return when (tag.dataType) {
+            PlcDataType.BOOL  -> TagValue.BoolValue(client.getBoolean(buf, 0, tag.bitOffset))
+            PlcDataType.BYTE  -> TagValue.IntValue(buf[0].toLong() and 0xFF, tag.unit)
+            PlcDataType.WORD  -> TagValue.IntValue(client.getWord(buf, 0).toLong(), tag.unit)
+            PlcDataType.INT   -> TagValue.IntValue(client.getInt(buf, 0).toLong(), tag.unit)
+            PlcDataType.DWORD -> TagValue.IntValue(client.getDWord(buf, 0), tag.unit)
+            PlcDataType.DINT  -> {
+                val v = ((buf[0].toLong() and 0xFF) shl 24) or
+                        ((buf[1].toLong() and 0xFF) shl 16) or
+                        ((buf[2].toLong() and 0xFF) shl 8)  or
+                         (buf[3].toLong() and 0xFF)
+                TagValue.IntValue(v, tag.unit)
             }
+            PlcDataType.REAL  -> TagValue.RealValue(client.getReal(buf, 0), tag.unit)
         }
     }
 
-    suspend fun writeTag(tag: PlcTag, rawBytes: ByteArray): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            runCatching { client.writeArea(tag.area, tag.dbNumber, tag.byteOffset, tag.dataType.wordLen, rawBytes) }
-        }
+    fun writeTag(tag: PlcTag, rawBytes: ByteArray) {
+        client.writeArea(tag.area, tag.dbNumber, tag.byteOffset, tag.dataType.wordLen, rawBytes)
+    }
 
     // -------------------------------------------------------------------------
     // Hilfsmethode: Bytes als lesbare Hex-/Dezimal-Tabelle
